@@ -338,17 +338,6 @@ public class MediaProvider extends ContentProvider {
                             // This could happen if we unplug the sd card during insert/update/delete
                             // See getDatabaseForUri.
                             Log.w(TAG, ex);
-                        } catch (OutOfMemoryError err) {
-                            /*
-                             * Note: Catching Errors is in most cases considered
-                             * bad practice. However, in this case it is
-                             * motivated by the fact that corrupt or very large
-                             * images may cause a huge allocation to be
-                             * requested and denied. The bitmap handling API in
-                             * Android offers no other way to guard against
-                             * these problems than by catching OutOfMemoryError.
-                             */
-                            Log.w(TAG, err);
                         } finally {
                             synchronized (mCurrentThumbRequest) {
                                 mCurrentThumbRequest.mState = MediaThumbRequest.State.DONE;
@@ -422,6 +411,7 @@ public class MediaProvider extends ContentProvider {
             db.execSQL("DROP TABLE IF EXISTS audio_playlists");
             db.execSQL("DROP TABLE IF EXISTS audio_playlists_map");
             db.execSQL("DROP TRIGGER IF EXISTS audio_playlists_cleanup");
+            db.execSQL("DROP TRIGGER IF EXISTS album_cleanup");
             db.execSQL("DROP TRIGGER IF EXISTS albumart_cleanup1");
             db.execSQL("DROP TRIGGER IF EXISTS albumart_cleanup2");
             db.execSQL("DROP TABLE IF EXISTS video");
@@ -594,6 +584,13 @@ public class MediaProvider extends ContentProvider {
                                "DELETE FROM audio_playlists_map WHERE playlist_id = old._id;" +
                                "SELECT _DELETE_FILE(old._data);" +
                            "END");
+
+                // Cleans up album table entry when all tracks in the album have been deleted
+                db.execSQL("CREATE TRIGGER IF NOT EXISTS album_cleanup AFTER DELETE ON audio_meta " +
+                        "WHEN (SELECT count(*) FROM audio_meta WHERE album_id = old.album_id) = 0 " +
+                        "BEGIN " +
+                            "DELETE FROM albums WHERE album_id = old.album_id;" +
+                        "END");
 
                 // Cleans up album_art table entry when an album is deleted
                 db.execSQL("CREATE TRIGGER IF NOT EXISTS albumart_cleanup1 DELETE ON albums " +
@@ -2752,20 +2749,15 @@ public class MediaProvider extends ContentProvider {
         if (albumart_uri != null) {
             Cursor c = query(albumart_uri, new String [] { "_data" },
                     null, null, null);
-            try {
-                if (c != null && c.moveToFirst()) {
-                    String albumart_path = c.getString(0);
-                    if (ensureFileExists(albumart_path)) {
-                        out = albumart_uri;
-                    }
-                } else {
-                    albumart_uri = null;
+            if (c.moveToFirst()) {
+                String albumart_path = c.getString(0);
+                if (ensureFileExists(albumart_path)) {
+                    out = albumart_uri;
                 }
-            } finally {
-                if (c != null) {
-                    c.close();
-                }
+            } else {
+                albumart_uri = null;
             }
+            c.close();
         }
         if (albumart_uri == null){
             ContentValues initialValues = new ContentValues();
@@ -3235,7 +3227,7 @@ public class MediaProvider extends ContentProvider {
     }
 
     private static String TAG = "MediaProvider";
-    private static final boolean LOCAL_LOGV = false;
+    private static final boolean LOCAL_LOGV = true;
     private static final int DATABASE_VERSION = 93;
     private static final String INTERNAL_DATABASE_NAME = "internal.db";
     private static final String EXTERNAL_DATABASE_NAME = "external.db";

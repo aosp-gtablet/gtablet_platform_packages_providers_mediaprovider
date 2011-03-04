@@ -69,7 +69,8 @@ class MediaThumbRequest {
     State mState = State.WAIT;
     long mMagic;
 
-    private static final Random sRandom = new Random();
+    private BitmapFactory.Options sBitmapOptions = new BitmapFactory.Options();
+    private final Random mRandom = new Random();
 
     static Comparator<MediaThumbRequest> getComparator() {
         return new Comparator<MediaThumbRequest>() {
@@ -217,7 +218,7 @@ class MediaThumbRequest {
             if (data != null) {
                 // make a new magic number since things are out of sync
                 do {
-                    magic = sRandom.nextLong();
+                    magic = mRandom.nextLong();
                 } while (magic == 0);
 
                 miniThumbFile.saveMiniThumbToFile(data, mOrigId, magic);
